@@ -1,0 +1,3 @@
+﻿  lab2_matrix.cpp
+C:\Users\Наська\Desktop\visualstudio\ТПРВ\lab2_matrix\lab2_matrix\lab2_matrix.cpp(111,15): warning C4244: аргумент: преобразование "time_t" в "unsigned int", возможна потеря данных
+  lab2_matrix.vcxproj -> C:\Users\Наська\Desktop\visualstudio\ТПРВ\lab2_matrix\x64\Debug\lab2_matrix.exe
