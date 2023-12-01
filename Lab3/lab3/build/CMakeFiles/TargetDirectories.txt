@@ -1,0 +1,3 @@
+/home/okpoiiika/lab3/build/CMakeFiles/password_cracker.dir
+/home/okpoiiika/lab3/build/CMakeFiles/edit_cache.dir
+/home/okpoiiika/lab3/build/CMakeFiles/rebuild_cache.dir
