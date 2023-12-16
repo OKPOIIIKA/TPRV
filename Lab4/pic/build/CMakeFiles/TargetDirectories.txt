@@ -1,0 +1,3 @@
+/home/okpoiiika/snap/tprv/lab4/pic/build/CMakeFiles/cudalb.dir
+/home/okpoiiika/snap/tprv/lab4/pic/build/CMakeFiles/edit_cache.dir
+/home/okpoiiika/snap/tprv/lab4/pic/build/CMakeFiles/rebuild_cache.dir
