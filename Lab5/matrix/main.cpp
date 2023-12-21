@@ -70,7 +70,7 @@ int main()
         init_matrix(B);
 
         auto start_gpu = std::chrono::high_resolution_clock::now();
-        //инициализация OpenCL (создаие контекста и командной очереди)
+        //инициализация OpenCL (создание контекста и командной очереди)
         cl_platform_id platform_id = nullptr;
         cl_device_id device_id = nullptr;
         cl_uint ret_num_devices;
