@@ -124,6 +124,7 @@ int main() {
         // Выполнение ядра на GPU
         cl::CommandQueue queue(context, devices[0]);
         cl::Event event;
+        //запуск ядра в очередь команд
         queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(imageWidth, imageHeight), cl::NullRange, nullptr, &event);
         event.wait();
 
