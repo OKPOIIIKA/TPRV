@@ -1,0 +1,3 @@
+/home/okpoiiika/snap/tprv/lab5/matrix/CMakeFiles/matrix.dir
+/home/okpoiiika/snap/tprv/lab5/matrix/CMakeFiles/edit_cache.dir
+/home/okpoiiika/snap/tprv/lab5/matrix/CMakeFiles/rebuild_cache.dir
