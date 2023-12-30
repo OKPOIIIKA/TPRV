@@ -104,7 +104,7 @@ int main()
 
         // Выполнение ядра
         size_t global_item_size[2] = { MATRIX_SIZE, MATRIX_SIZE };
-        size_t local_item_size[2] = { 1, 1 };
+        size_t local_item_size[2] = { 16, 16 };
         ret = clEnqueueNDRangeKernel(command_queue, kernel, 2, nullptr, global_item_size, local_item_size, 0, nullptr, nullptr);
 
         // Чтение результата обратно в память CPU
@@ -127,7 +127,7 @@ int main()
 
         auto start_cpu = std::chrono::high_resolution_clock::now();
 
-        cpu_matrix_multiply(A, B, C_cpu);
+        //cpu_matrix_multiply(A, B, C_cpu);
 
         auto stop_cpu = std::chrono::high_resolution_clock::now();
 

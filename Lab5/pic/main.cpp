@@ -1,148 +1,137 @@
-#include <iostream>
-#include <fstream>
-#include <vector>
 #include <CL/cl2.hpp>
+#include <iostream>
+#include <vector>
 #include <opencv2/opencv.hpp>
 #include <chrono>
 
-const char *kernelSource = R"(
-__kernel void processImage(__global const uchar3* inputImage,
-                           __global uchar3* outputImage,
-                           const int width,
-                           const int height) {
-    int gidX = get_global_id(0);
-    int gidY = get_global_id(1);
+const char* kernelSource = R"kernel(
+__kernel void modifyChannels(__global const uchar* src, __global uchar* blueChannel,
+                             __global uchar* yellowChannel, int rows, int cols) {
+    int x = get_global_id(0);
+    int y = get_global_id(1);
 
-    // Проверка выхода за границы изображения
-    if (gidX < width && gidY < height) {
-        int index = gidY * width + gidX;
+    if (x < cols && y < rows) {
+        int idx = y * cols + x;
+        uchar red = src[idx * 3 + 2];
+        uchar green = src[idx * 3 + 1];
+        uchar blue = src[idx * 3];
 
-        // Получение интенсивности пикселя
-        uchar intensity = (inputImage[index].s0 + inputImage[index].s1 + inputImage[index].s2) / 3;
-
-        // Запись интенсивности в результирующий буфер
-        outputImage[index].x = intensity;
-        outputImage[index].y = intensity;
-        outputImage[index].z = intensity;
+        blueChannel[idx] = blue - (green + blue) / 2;
+        yellowChannel[idx] = red + green - 2 * (abs(red - green) + blue);
     }
 }
-)";
-void checkErr(cl_int err, const char *name) {
-    if (err != CL_SUCCESS) {
-        std::cerr << "ERROR: " << name << " (" << err << ")" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-}
+)kernel";
 
-int main() {
-
-// Получение доступных платформ
+int changeImage(cv::Mat& src, std::string& res)
+{
+    auto start = std::chrono::high_resolution_clock::now();
+    //выведение инфы о всех платформах и выбор первой платформы
+    //предсталяющую GPU
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
-
-    if (platforms.empty()) {
-        std::cerr << "No OpenCL platforms found." << std::endl;
-        return 1;
-    }
-
-    // Выбор первой платформы
-    cl::Platform platform = platforms.front();
-    std::cout << "Platform: " << platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
-
-    // Получение доступных устройств
+    auto platform = platforms.front();
+    //устройства на выбранной платформе, сохранение в devices
+    //и выбор девайса
     std::vector<cl::Device> devices;
     platform.getDevices(CL_DEVICE_TYPE_GPU, &devices);
+    auto device = devices.front();
+    //создание контекста, окружение выполнения для ядра 
+    //создание объекта с использ. контекста и ядра
+    cl::Context context(device);
+    cl::Program program(context, kernelSource);
+    program.build("-cl-std=CL1.2");
+    //очередь команд для выполнения задач на выбранном устройстве и в созданном контексте. 
+    //отправка задач на выполнение на устройстве.
+    cl::CommandQueue queue(context, device);
 
-    if (devices.empty()) {
-        std::cerr << "No OpenCL GPU devices found." << std::endl;
-        return 1;
-    }
+    // Создание буферов
+    cl::Buffer clSrc(context, CL_MEM_READ_ONLY, src.total() * src.elemSize());
+    cl::Buffer clBlueChannel(context, CL_MEM_WRITE_ONLY, src.total());
+    cl::Buffer clYellowChannel(context, CL_MEM_WRITE_ONLY, src.total());
 
-    // Выбор первого устройства
-    cl::Device device = devices.front();
-    std::cout << "Device: " << device.getInfo<CL_DEVICE_NAME>() << std::endl;
+    // Копирование данных в буфер
+    queue.enqueueWriteBuffer(clSrc, CL_TRUE, 0, src.total() * src.elemSize(), src.data);
 
-    // Получение информации об устройстве
-    cl_uint max_compute_units;
-    device.getInfo(CL_DEVICE_MAX_COMPUTE_UNITS, &max_compute_units);
-    std::cout << "Max Compute Units: " << max_compute_units << std::endl;
+    // Создание объекта ядра, установка аргументов и запуск ядра
+    cl::Kernel kernel(program, "modifyChannels");
+    kernel.setArg(0, clSrc);
+    kernel.setArg(1, clBlueChannel);
+    kernel.setArg(2, clYellowChannel);
+    kernel.setArg(3, src.rows);
+    kernel.setArg(4, src.cols);
 
-
-    // Загрузка изображения
-    cv::Mat originalImage = cv::imread("img1.jpg");
-    if (originalImage.empty()) {
-        std::cerr << "Error: Unable to load input image!" << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    int imageWidth = originalImage.cols;
-    int imageHeight = originalImage.rows;
+    queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(src.cols, src.rows));
+    queue.finish();
     
-    for (int i = 0; i < 10; i++)
-    {
-        auto start = std::chrono::high_resolution_clock::now();
-        // Инициализация OpenCL
-        std::vector<cl::Platform> platforms;
-        cl::Platform::get(&platforms);
-        if (platforms.empty()) {
-            std::cerr << "No OpenCL platforms found" << std::endl;
-            return EXIT_FAILURE;
-        }   
-        //создание контекста (GPU)
-        cl_context_properties properties[] = {CL_CONTEXT_PLATFORM, (cl_context_properties)(platforms[0])(), 0};
-        cl::Context context(CL_DEVICE_TYPE_GPU, properties);
+    // Получение результата
+    cv::Mat blueChannel(src.size(), CV_8UC1);
+    cv::Mat yellowChannel(src.size(), CV_8UC1);
+    queue.enqueueReadBuffer(clBlueChannel, CL_TRUE, 0, src.total(), blueChannel.data);
+    queue.enqueueReadBuffer(clYellowChannel, CL_TRUE, 0, src.total(), yellowChannel.data);
 
-        std::vector<cl::Device> devices = context.getInfo<CL_CONTEXT_DEVICES>();
+    // Сохранение изображений
+    cv::imwrite(res + "_blue_channel.jpg", blueChannel);
+    cv::imwrite(res + "_yellow_channel.jpg", yellowChannel);
+    
+    auto stop = std::chrono::high_resolution_clock::now();
 
-        // Чтение ядра OpenCL из строки
-        std::string kernelCode(kernelSource);
-        cl::Program::Sources source;
-        source.push_back({kernelCode.c_str(), kernelCode.length()});
-        cl::Program program(context, source);
-        cl_int err = program.build(devices, "");
-        checkErr(err, "Program::build()");
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
 
-        // Создание ядра
-        cl::Kernel kernel(program, "processImage");
+    return duration;
+}
 
-        // Создание буферов для данных
-        cl::Buffer inputBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                            sizeof(uchar) * originalImage.total() * originalImage.channels(), originalImage.data, &err);
-        checkErr(err, "Buffer::Buffer()");
+int main() 
+{
+    std::string output = "1";
 
-        cv::Mat outputImage(originalImage.size(), originalImage.type());
-
-        cl::Buffer outputBuffer(context, CL_MEM_WRITE_ONLY, sizeof(uchar) * outputImage.total() * outputImage.channels(), nullptr, &err);
-        checkErr(err, "Buffer::Buffer()");
-
-        // Установка аргументов для ядра
-        kernel.setArg(0, inputBuffer);
-        kernel.setArg(1, outputBuffer);
-        kernel.setArg(2, imageWidth);
-        kernel.setArg(3, imageHeight);
-
-        // Выполнение ядра на GPU
-        cl::CommandQueue queue(context, devices[0]);
-        cl::Event event;
-        //запуск ядра в очередь команд
-        queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(imageWidth, imageHeight), cl::NullRange, nullptr, &event);
-        event.wait();
-
-        // Чтение результатов из буфера вывода в системную память
-        queue.enqueueReadBuffer(outputBuffer, CL_TRUE, 0, sizeof(uchar) * outputImage.total() * outputImage.channels(), outputImage.data);
-
-        // Масштабирование изображения в два раза
-        cv::Mat scaledImage;
-        cv::resize(outputImage, scaledImage, cv::Size(), 2, 2);
-
-        // Сохранение результата
-        cv::imwrite("output1.jpg", scaledImage);
-
-        auto stop = std::chrono::high_resolution_clock::now();
-
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-
-        std::cout << "Pic 1 " << i + 1 << " duration: " << duration << " ms\n";
+    cv::Mat src = cv::imread("img1.jpg");
+    if (src.empty()) {
+        std::cerr << "Error loading the image" << std::endl;
+        return -1;
     }
-    return 0;
+
+    auto start = std::chrono::steady_clock::now();
+    std::cout << "Picture 1\n";
+    for (int i = 0; i < 10; ++i)
+    {
+        int duration = changeImage(src, output);
+        std::cout << duration << " ms\n";
+    }
+
+    std::cout << "\n";
+
+    output = "2";
+
+    src = cv::imread("img2.jpg");
+    if (src.empty()) {
+        std::cerr << "Error loading the image" << std::endl;
+        return -1;
+    }
+
+    start = std::chrono::steady_clock::now();
+    std::cout << "Picture 2\n";
+    for (int i = 0; i < 10; ++i)
+    {
+        int duration = changeImage(src, output);
+        std::cout << duration << " ms\n";
+    }
+
+    std::cout << "\n";
+
+    output = "3";
+
+    src = cv::imread("img3.jpg");
+    if (src.empty()) {
+        std::cerr << "Error loading the image" << std::endl;
+        return -1;
+    }
+
+    start = std::chrono::steady_clock::now();
+    std::cout << "Picture 3\n";
+    for (int i = 0; i < 10; ++i)
+    {
+        int duration = changeImage(src, output);
+        std::cout << duration << " ms\n";
+    }
+
 }
